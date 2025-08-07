@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  password  String?
+  name      String?
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Subscription
+  subscriptionId     String?
+  subscriptionStatus String? // active, canceled, past_due
+  gamesPlayedThisMonth Int @default(0)
+  lastGameDate       DateTime?
+  
+  // Relations
+  whiteGames Game[] @relation("WhitePlayer")
+  blackGames Game[] @relation("BlackPlayer")
+  
+  @@map("users")
+}
+
+model Game {
+  id        String   @id @default(cuid())
+  roomId    String   @unique
+  status    String   @default("waiting") // waiting, active, completed, abandoned
+  result    String?  // white_wins, black_wins, draw, abandoned
+  
+  whitePlayerId String?
+  blackPlayerId String?
+  whitePlayer   User?   @relation("WhitePlayer", fields: [whitePlayerId], references: [id])
+  blackPlayer   User?   @relation("BlackPlayer", fields: [blackPlayerId], references: [id])
+  
+  currentTurn String @default("white") // white, black
+  boardState  String @default("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") // FEN notation
+  
+  moves     String @default("[]") // JSON string of move objects
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  startedAt DateTime?
+  endedAt   DateTime?
+  
+  // Video room
+  videoRoomUrl String?
+  
+  @@map("games")
+}
