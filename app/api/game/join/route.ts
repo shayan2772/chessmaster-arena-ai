@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
   try {
-    // Import prisma dynamically to avoid build-time issues
-    const { prisma } = await import('@/lib/db')
-    
     const token = request.cookies.get('auth-token')?.value
     const { roomId } = await request.json()
     
@@ -23,58 +21,66 @@ export async function POST(request: NextRequest) {
     }
 
     // Find the game
-    const game = await prisma.game.findUnique({
-      where: { roomId },
-      include: {
-        whitePlayer: true,
-        blackPlayer: true,
-      }
-    })
+    const { data: game, error: gameError } = await supabaseAdmin
+      .from('games')
+      .select('*')
+      .eq('room_id', roomId)
+      .single()
 
-    if (!game) {
+    if (gameError || !game) {
       return NextResponse.json({ error: 'Game not found' }, { status: 404 })
     }
 
+    // Check if game is available to join
     if (game.status !== 'waiting') {
-      return NextResponse.json({ error: 'Game is not available to join' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Game is not available to join' },
+        { status: 400 }
+      )
     }
 
     // Check if user is already in the game
-    if (game.whitePlayerId === payload.userId) {
-      return NextResponse.json({
-        gameId: game.id,
-        roomId: game.roomId,
-        playerColor: 'white',
-      })
+    if (game.white_player_id === payload.userId) {
+      return NextResponse.json(
+        { error: 'You are already the white player in this game' },
+        { status: 400 }
+      )
     }
 
-    if (game.blackPlayerId === payload.userId) {
-      return NextResponse.json({
-        gameId: game.id,
-        roomId: game.roomId,
-        playerColor: 'black',
+    // Join as black player
+    const { data: updatedGame, error: updateError } = await supabaseAdmin
+      .from('games')
+      .update({
+        black_player_id: payload.userId,
+        status: 'active',
+        started_at: new Date().toISOString()
       })
+      .eq('room_id', roomId)
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('Game join error:', updateError)
+      return NextResponse.json(
+        { error: 'Failed to join game' },
+        { status: 500 }
+      )
     }
 
-    // Join as black player if slot is available
-    if (!game.blackPlayerId) {
-      const updatedGame = await prisma.game.update({
-        where: { id: game.id },
-        data: {
-          blackPlayerId: payload.userId,
-          status: 'active',
-          startedAt: new Date(),
-        }
-      })
-
-      return NextResponse.json({
-        gameId: updatedGame.id,
-        roomId: updatedGame.roomId,
-        playerColor: 'black',
-      })
-    }
-
-    return NextResponse.json({ error: 'Game is full' }, { status: 400 })
+    return NextResponse.json({
+      message: 'Successfully joined game',
+      game: {
+        id: updatedGame.id,
+        roomId: updatedGame.room_id,
+        status: updatedGame.status,
+        whitePlayerId: updatedGame.white_player_id,
+        blackPlayerId: updatedGame.black_player_id,
+        currentTurn: updatedGame.current_turn,
+        boardState: updatedGame.board_state,
+        moves: updatedGame.moves,
+        startedAt: updatedGame.started_at
+      }
+    })
   } catch (error) {
     console.error('Game join error:', error)
     return NextResponse.json(

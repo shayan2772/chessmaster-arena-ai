@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
   try {
-    // Import prisma dynamically to avoid build-time issues
-    const { prisma } = await import('@/lib/db')
-    
     const token = request.cookies.get('auth-token')?.value
     
     if (!token) {
@@ -20,67 +18,48 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    let game = await prisma.game.findUnique({
-      where: { roomId: params.roomId },
-      include: {
-        whitePlayer: {
-          select: { id: true, username: true, name: true }
-        },
-        blackPlayer: {
-          select: { id: true, username: true, name: true }
-        }
-      }
-    })
+    // Get game with player details
+    const { data: game, error: gameError } = await supabaseAdmin
+      .from('games')
+      .select(`
+        *,
+        white_player:users!white_player_id(id, username, name, avatar),
+        black_player:users!black_player_id(id, username, name, avatar)
+      `)
+      .eq('room_id', params.roomId)
+      .single()
 
-    if (!game) {
+    if (gameError || !game) {
       return NextResponse.json({ error: 'Game not found' }, { status: 404 })
     }
 
-    // Auto-join as black player if slot is available and user is not already in game
-    if (!game.blackPlayerId && game.whitePlayerId !== payload.userId && game.status === 'waiting') {
-      game = await prisma.game.update({
-        where: { id: game.id },
-        data: {
-          blackPlayerId: payload.userId,
-          status: 'active',
-          startedAt: new Date(),
-        },
-        include: {
-          whitePlayer: {
-            select: { id: true, username: true, name: true }
-          },
-          blackPlayer: {
-            select: { id: true, username: true, name: true }
-          }
-        }
-      })
-    }
+    // Check if user is authorized to view this game
+    const isPlayer = game.white_player_id === payload.userId || 
+                    game.black_player_id === payload.userId
+    const isWaitingGame = game.status === 'waiting'
 
-    // Determine player color
-    let playerColor: 'white' | 'black' | 'spectator' = 'spectator'
-    if (game.whitePlayerId === payload.userId) {
-      playerColor = 'white'
-    } else if (game.blackPlayerId === payload.userId) {
-      playerColor = 'black'
+    if (!isPlayer && !isWaitingGame) {
+      return NextResponse.json({ error: 'Unauthorized to view this game' }, { status: 403 })
     }
 
     return NextResponse.json({
       game: {
         id: game.id,
-        roomId: game.roomId,
+        roomId: game.room_id,
         status: game.status,
         result: game.result,
-        currentTurn: game.currentTurn,
-        boardState: game.boardState,
-        moves: JSON.parse(game.moves || '[]'),
-        whitePlayer: game.whitePlayer,
-        blackPlayer: game.blackPlayer,
-        videoRoomUrl: game.videoRoomUrl,
-        createdAt: game.createdAt,
-        startedAt: game.startedAt,
-      },
-      playerColor,
-      userId: payload.userId,
+        whitePlayerId: game.white_player_id,
+        blackPlayerId: game.black_player_id,
+        whitePlayer: game.white_player,
+        blackPlayer: game.black_player,
+        currentTurn: game.current_turn,
+        boardState: game.board_state,
+        moves: game.moves,
+        createdAt: game.created_at,
+        startedAt: game.started_at,
+        endedAt: game.ended_at,
+        videoRoomUrl: game.video_room_url
+      }
     })
   } catch (error) {
     console.error('Game fetch error:', error)

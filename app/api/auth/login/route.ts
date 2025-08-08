@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { comparePassword, generateToken } from '@/lib/auth'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
   try {
-    // Import prisma dynamically to avoid build-time issues
-    const { prisma } = await import('@/lib/db')
-    
     const { email, password } = await request.json()
 
     if (!email || !password) {
@@ -15,12 +13,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email }
-    })
+    // Find user in Supabase
+    const { data: user, error } = await supabaseAdmin
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single()
 
-    if (!user || !user.password) {
+    if (error || !user || !user.password) {
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 }
@@ -51,8 +51,8 @@ export async function POST(request: NextRequest) {
         email: user.email,
         username: user.username,
         name: user.name,
-        gamesPlayedThisMonth: user.gamesPlayedThisMonth,
-        subscriptionStatus: user.subscriptionStatus,
+        gamesPlayedThisMonth: user.games_played_this_month,
+        subscriptionStatus: user.subscription_status,
       }
     })
 

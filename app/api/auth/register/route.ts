@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { hashPassword, generateToken } from '@/lib/auth'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
   try {
-    // Import prisma dynamically to avoid build-time issues
-    const { prisma } = await import('@/lib/db')
-    
     const { email, username, password, name } = await request.json()
 
     // Validation
@@ -17,14 +15,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user already exists
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email },
-          { username }
-        ]
-      }
-    })
+    const { data: existingUser } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .or(`email.eq.${email},username.eq.${username}`)
+      .single()
 
     if (existingUser) {
       return NextResponse.json(
@@ -36,14 +31,25 @@ export async function POST(request: NextRequest) {
     // Hash password and create user
     const hashedPassword = await hashPassword(password)
     
-    const user = await prisma.user.create({
-      data: {
+    const { data: user, error } = await supabaseAdmin
+      .from('users')
+      .insert({
         email,
         username,
         password: hashedPassword,
         name: name || username,
-      }
-    })
+        games_played_this_month: 0
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Supabase error:', error)
+      return NextResponse.json(
+        { error: 'Failed to create user' },
+        { status: 500 }
+      )
+    }
 
     // Generate JWT token
     const token = generateToken({
@@ -59,8 +65,8 @@ export async function POST(request: NextRequest) {
         email: user.email,
         username: user.username,
         name: user.name,
-        gamesPlayedThisMonth: user.gamesPlayedThisMonth,
-        subscriptionStatus: user.subscriptionStatus,
+        gamesPlayedThisMonth: user.games_played_this_month,
+        subscriptionStatus: user.subscription_status,
       }
     })
 
