@@ -68,25 +68,43 @@ app.prepare().then(() => {
         return
       }
 
+      // Validate move has required properties
+      if (!move || !move.fen) {
+        console.log('❌ Invalid move data:', move)
+        return
+      }
+
       // Update game state
       room.gameState.moves.push(move)
-      if (move.fen) {
-        room.gameState.fen = move.fen
-        console.log('📋 Updated board state:', move.fen)
-      }
+      room.gameState.fen = move.fen
       room.gameState.currentTurn = room.gameState.currentTurn === 'white' ? 'black' : 'white'
 
+      console.log('📋 Updated board state:', move.fen)
+      console.log('🔄 Current turn:', room.gameState.currentTurn)
       console.log('📡 Broadcasting move to room:', roomId)
+      
       // Broadcast move to all players in room
-      io.to(roomId).emit('move-made', { move, gameState: room.gameState })
+      io.to(roomId).emit('move-made', { 
+        move, 
+        gameState: {
+          fen: room.gameState.fen,
+          currentTurn: room.gameState.currentTurn,
+          moves: room.gameState.moves
+        }
+      })
     })
 
     // WebRTC Video Chat Signaling
     socket.on('video-ready', ({ roomId, userId }) => {
+      console.log('🎥 Video ready for user:', userId, 'in room:', roomId)
       const room = gameRooms.get(roomId)
-      if (!room) return
+      if (!room) {
+        console.log('❌ Room not found for video:', roomId)
+        return
+      }
 
       room.videoUsers.add(socket.id)
+      console.log('📹 Video users in room:', room.videoUsers.size)
       
       // Notify other users in the room that this user is ready for video
       socket.to(roomId).emit('peer-joined', { peerId: socket.id, userId })

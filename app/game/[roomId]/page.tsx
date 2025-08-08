@@ -60,7 +60,7 @@ export default function GamePage() {
   }, [gameData, playerColor, currentUserId])
 
   useEffect(() => {
-    if (currentUserId && playerColor !== 'spectator') {
+    if (currentUserId && gameData) {
       initializeSocket()
     }
 
@@ -69,7 +69,7 @@ export default function GamePage() {
         socket.disconnect()
       }
     }
-  }, [currentUserId, playerColor])
+  }, [currentUserId, gameData])
 
   const fetchGameData = async () => {
     try {
@@ -107,6 +107,7 @@ export default function GamePage() {
   }
 
   const initializeSocket = () => {
+    console.log('🔌 Initializing socket connection...')
     const newSocket = io()
 
     newSocket.on('connect', () => {
@@ -129,17 +130,29 @@ export default function GamePage() {
 
     newSocket.on('move-made', ({ move, gameState }) => {
       console.log('♟️ Move received:', move, 'New state:', gameState)
-      setGameData(prev => prev ? {
-        ...prev,
-        boardState: gameState.fen,
-        currentTurn: gameState.currentTurn,
-        moves: gameState.moves
-      } : null)
+      setGameData(prev => {
+        if (!prev) return null
+
+        const updatedData = {
+          ...prev,
+          boardState: gameState.fen || move.fen,
+          currentTurn: gameState.currentTurn,
+          moves: gameState.moves || [...prev.moves, move]
+        }
+
+        console.log('🔄 Updated game data:', updatedData)
+        return updatedData
+      })
     })
 
     newSocket.on('player-joined', ({ userId, playerColor: joinedColor }) => {
+      console.log('👥 Player joined:', userId, 'as', joinedColor)
       setConnectionStatus(`Player joined as ${joinedColor}`)
-      fetchGameData() // Refresh game data
+
+      // Refresh game data to get updated player info
+      setTimeout(() => {
+        fetchGameData()
+      }, 500) // Small delay to ensure database is updated
     })
 
     newSocket.on('player-left', () => {
@@ -150,13 +163,37 @@ export default function GamePage() {
   }
 
   const handleMove = (move: GameMove) => {
-    if (socket && gameData) {
-      console.log('🎯 Making move:', move)
-      socket.emit('make-move', {
-        roomId,
-        move
-      })
+    console.log('🎯 Attempting to make move:', move)
+    console.log('🔍 Socket connected:', !!socket)
+    console.log('🔍 Game data:', !!gameData)
+    console.log('🔍 Player color:', playerColor)
+    console.log('🔍 Current turn:', gameData?.currentTurn)
+
+    if (!socket) {
+      console.error('❌ No socket connection')
+      return
     }
+
+    if (!gameData) {
+      console.error('❌ No game data')
+      return
+    }
+
+    if (playerColor === 'spectator') {
+      console.error('❌ Spectators cannot make moves')
+      return
+    }
+
+    if (gameData.currentTurn !== playerColor) {
+      console.error('❌ Not your turn')
+      return
+    }
+
+    console.log('✅ Move validation passed, emitting move')
+    socket.emit('make-move', {
+      roomId,
+      move
+    })
   }
 
   const joinAsSecondPlayer = async () => {
@@ -257,8 +294,8 @@ export default function GamePage() {
               <button
                 onClick={() => setShowAIPanel(!showAIPanel)}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${showAIPanel
-                    ? 'bg-green-600 hover:bg-green-700 text-white'
-                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                  : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
                   }`}
               >
                 <Brain className="h-4 w-4" />
