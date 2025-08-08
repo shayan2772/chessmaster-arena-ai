@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { io, Socket } from 'socket.io-client'
+import { RealtimeClient } from '@/lib/realtime'
 import ChessBoard from '@/components/ChessBoard'
 import SimpleVideoChat from '@/components/SimpleVideoChat'
 import AIAnalysis from '@/components/AIAnalysis'
@@ -35,7 +35,7 @@ export default function GamePage() {
   const router = useRouter()
   const roomId = params.roomId as string
 
-  const [socket, setSocket] = useState<Socket | null>(null)
+  const [realtimeClient, setRealtimeClient] = useState<RealtimeClient | null>(null)
   const [gameData, setGameData] = useState<GameData | null>(null)
   const [playerColor, setPlayerColor] = useState<'white' | 'black' | 'spectator'>('spectator')
   const [isLoading, setIsLoading] = useState(true)
@@ -61,12 +61,12 @@ export default function GamePage() {
 
   useEffect(() => {
     if (currentUserId && gameData) {
-      initializeSocket()
+      initializeRealtime()
     }
 
     return () => {
-      if (socket) {
-        socket.disconnect()
+      if (realtimeClient) {
+        realtimeClient.disconnect()
       }
     }
   }, [currentUserId, gameData])
@@ -106,71 +106,53 @@ export default function GamePage() {
     }
   }
 
-  const initializeSocket = () => {
-    console.log('🔌 Initializing socket connection...')
-    const newSocket = io()
+  const initializeRealtime = () => {
+    console.log('🔌 Initializing realtime connection...')
+    const client = new RealtimeClient(roomId, currentUserId, playerColor)
 
-    newSocket.on('connect', () => {
-      console.log('🔌 Socket connected, joining game with userId:', currentUserId, 'color:', playerColor)
+    client.on('connect', () => {
+      console.log('🔌 Realtime connected, joining game with userId:', currentUserId, 'color:', playerColor)
       setConnectionStatus('Connected')
-      newSocket.emit('join-game', {
-        roomId,
-        userId: currentUserId,
-        playerColor,
-      })
     })
 
-    newSocket.on('disconnect', () => {
+    client.on('disconnect', () => {
       setConnectionStatus('Disconnected')
     })
 
-    newSocket.on('game-state', (gameState) => {
-      setGameData(prev => prev ? { ...prev, ...gameState } : null)
+    client.on('move-made', ({ move }: { move: any }) => {
+      console.log('♟️ Move received:', move)
+      
+      // Refresh game data from database to get latest state
+      fetchGameData()
     })
 
-    newSocket.on('move-made', ({ move, gameState }) => {
-      console.log('♟️ Move received:', move, 'New state:', gameState)
-      setGameData(prev => {
-        if (!prev) return null
-
-        const updatedData = {
-          ...prev,
-          boardState: gameState.fen || move.fen,
-          currentTurn: gameState.currentTurn,
-          moves: gameState.moves || [...prev.moves, move]
-        }
-
-        console.log('🔄 Updated game data:', updatedData)
-        return updatedData
-      })
-    })
-
-    newSocket.on('player-joined', ({ userId, playerColor: joinedColor }) => {
+    client.on('player-joined', ({ userId, playerColor: joinedColor }: { userId: string, playerColor: string }) => {
       console.log('👥 Player joined:', userId, 'as', joinedColor)
       setConnectionStatus(`Player joined as ${joinedColor}`)
-
+      
       // Refresh game data to get updated player info
       setTimeout(() => {
         fetchGameData()
-      }, 500) // Small delay to ensure database is updated
+      }, 1000)
     })
 
-    newSocket.on('player-left', () => {
+    client.on('player-left', () => {
       setConnectionStatus('Player left')
     })
 
-    setSocket(newSocket)
+    client.connect()
+    setRealtimeClient(client)
   }
 
   const handleMove = (move: GameMove) => {
     console.log('🎯 Attempting to make move:', move)
-    console.log('🔍 Socket connected:', !!socket)
+    console.log('🔍 Realtime connected:', !!realtimeClient)
     console.log('🔍 Game data:', !!gameData)
     console.log('🔍 Player color:', playerColor)
     console.log('🔍 Current turn:', gameData?.currentTurn)
 
-    if (!socket) {
-      console.error('❌ No socket connection')
+    if (!realtimeClient) {
+      console.error('❌ No realtime connection')
       return
     }
 
@@ -190,10 +172,7 @@ export default function GamePage() {
     }
 
     console.log('✅ Move validation passed, emitting move')
-    socket.emit('make-move', {
-      roomId,
-      move
-    })
+    realtimeClient.emit('make-move', { move })
   }
 
   const joinAsSecondPlayer = async () => {
@@ -470,9 +449,9 @@ export default function GamePage() {
               <div className="p-4 border-b border-white/10">
                 <h3 className="font-semibold text-white">Video Chat</h3>
               </div>
-              {socket && currentUserId ? (
+              {realtimeClient && currentUserId ? (
                 <SimpleVideoChat
-                  socket={socket}
+                  socket={realtimeClient}
                   roomId={roomId}
                   userId={currentUserId}
                   onLeave={() => console.log('Left video chat')}
