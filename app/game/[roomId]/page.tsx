@@ -56,7 +56,18 @@ export default function GamePage() {
   const fetchGameData = async () => {
     try {
       console.log('🎮 Fetching game data for room:', roomId)
+      console.log('🔍 Params object:', params)
+      console.log('🔍 RoomId type:', typeof roomId, 'Value:', roomId)
+      
+      if (!roomId || roomId === 'undefined') {
+        console.error('❌ Invalid roomId:', roomId)
+        router.push('/dashboard')
+        return
+      }
+      
       const response = await fetch(`/api/game/${roomId}`)
+      console.log('📡 API Response status:', response.status)
+      
       if (response.ok) {
         const data = await response.json()
         console.log('🎯 Game data received:', data)
@@ -65,7 +76,8 @@ export default function GamePage() {
         setCurrentUserId(data.userId)
         console.log('👤 Player color:', data.playerColor, 'User ID:', data.userId)
       } else {
-        console.error('❌ Failed to fetch game data:', response.status)
+        const errorData = await response.json()
+        console.error('❌ Failed to fetch game data:', response.status, errorData)
         router.push('/dashboard')
       }
     } catch (error) {

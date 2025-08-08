@@ -42,6 +42,14 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized to view this game' }, { status: 403 })
     }
 
+    // Determine player color
+    let playerColor: 'white' | 'black' | 'spectator' = 'spectator'
+    if (game.white_player_id === payload.userId) {
+      playerColor = 'white'
+    } else if (game.black_player_id === payload.userId) {
+      playerColor = 'black'
+    }
+
     return NextResponse.json({
       game: {
         id: game.id,
@@ -54,12 +62,14 @@ export async function GET(
         blackPlayer: game.black_player,
         currentTurn: game.current_turn,
         boardState: game.board_state,
-        moves: game.moves,
+        moves: JSON.parse(game.moves || '[]'),
         createdAt: game.created_at,
         startedAt: game.started_at,
         endedAt: game.ended_at,
         videoRoomUrl: game.video_room_url
-      }
+      },
+      playerColor,
+      userId: payload.userId
     })
   } catch (error) {
     console.error('Game fetch error:', error)

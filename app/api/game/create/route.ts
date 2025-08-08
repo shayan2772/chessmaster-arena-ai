@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       message: 'Game created successfully',
+      roomId: game.room_id,
       game: {
         id: game.id,
         roomId: game.room_id,
@@ -106,7 +107,7 @@ export async function POST(request: NextRequest) {
         blackPlayerId: game.black_player_id,
         currentTurn: game.current_turn,
         boardState: game.board_state,
-        moves: game.moves,
+        moves: JSON.parse(game.moves || '[]'),
         createdAt: game.created_at
       }
     })
