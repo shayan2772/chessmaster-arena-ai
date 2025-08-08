@@ -16,19 +16,25 @@ interface GameData {
   id: string
   roomId: string
   status: string
+  result?: string
   currentTurn: 'white' | 'black'
   boardState: string
   moves: GameMove[]
+  whitePlayerId?: string
+  blackPlayerId?: string
   whitePlayer?: { id: string; username: string; name: string }
   blackPlayer?: { id: string; username: string; name: string }
   videoRoomUrl?: string
+  createdAt?: string
+  startedAt?: string
+  endedAt?: string
 }
 
 export default function GamePage() {
   const params = useParams()
   const router = useRouter()
   const roomId = params.roomId as string
-  
+
   const [socket, setSocket] = useState<Socket | null>(null)
   const [gameData, setGameData] = useState<GameData | null>(null)
   const [playerColor, setPlayerColor] = useState<'white' | 'black' | 'spectator'>('spectator')
@@ -36,10 +42,22 @@ export default function GamePage() {
   const [connectionStatus, setConnectionStatus] = useState('Connecting...')
   const [currentUserId, setCurrentUserId] = useState<string>('')
   const [showAIPanel, setShowAIPanel] = useState(false)
+  const [showToast, setShowToast] = useState(false)
+  const [toastMessage, setToastMessage] = useState('')
 
   useEffect(() => {
     fetchGameData()
   }, [roomId])
+
+  // Auto-join as second player if game is waiting and user is not already a player
+  useEffect(() => {
+    if (gameData && gameData.status === 'waiting' && playerColor === 'spectator' && currentUserId) {
+      // Only join if there's no black player yet
+      if (!gameData.blackPlayerId) {
+        joinAsSecondPlayer()
+      }
+    }
+  }, [gameData, playerColor, currentUserId])
 
   useEffect(() => {
     if (currentUserId && playerColor !== 'spectator') {
@@ -58,16 +76,16 @@ export default function GamePage() {
       console.log('🎮 Fetching game data for room:', roomId)
       console.log('🔍 Params object:', params)
       console.log('🔍 RoomId type:', typeof roomId, 'Value:', roomId)
-      
+
       if (!roomId || roomId === 'undefined') {
         console.error('❌ Invalid roomId:', roomId)
         router.push('/dashboard')
         return
       }
-      
+
       const response = await fetch(`/api/game/${roomId}`)
       console.log('📡 API Response status:', response.status)
-      
+
       if (response.ok) {
         const data = await response.json()
         console.log('🎯 Game data received:', data)
@@ -90,7 +108,7 @@ export default function GamePage() {
 
   const initializeSocket = () => {
     const newSocket = io()
-    
+
     newSocket.on('connect', () => {
       console.log('🔌 Socket connected, joining game with userId:', currentUserId, 'color:', playerColor)
       setConnectionStatus('Connected')
@@ -111,8 +129,8 @@ export default function GamePage() {
 
     newSocket.on('move-made', ({ move, gameState }) => {
       console.log('♟️ Move received:', move, 'New state:', gameState)
-      setGameData(prev => prev ? { 
-        ...prev, 
+      setGameData(prev => prev ? {
+        ...prev,
         boardState: gameState.fen,
         currentTurn: gameState.currentTurn,
         moves: gameState.moves
@@ -141,10 +159,46 @@ export default function GamePage() {
     }
   }
 
+  const joinAsSecondPlayer = async () => {
+    try {
+      console.log('🎯 Attempting to join as second player...')
+      const response = await fetch('/api/game/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ roomId }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ Successfully joined as second player')
+        // Refresh game data to get updated player info
+        fetchGameData()
+        showToastMessage('You joined the game as Black player!')
+      } else {
+        const errorData = await response.json()
+        console.error('❌ Failed to join game:', errorData)
+        showToastMessage('Failed to join the game')
+      }
+    } catch (error) {
+      console.error('❌ Error joining game:', error)
+      showToastMessage('Network error while joining game')
+    }
+  }
+
   const copyRoomLink = () => {
     const link = `${window.location.origin}/game/${roomId}`
     navigator.clipboard.writeText(link)
-    alert('Room link copied to clipboard!')
+    showToastMessage('Room link copied to clipboard!')
+  }
+
+  const showToastMessage = (message: string) => {
+    setToastMessage(message)
+    setShowToast(true)
+    setTimeout(() => {
+      setShowToast(false)
+    }, 3000)
   }
 
   if (isLoading) {
@@ -198,19 +252,27 @@ export default function GamePage() {
                 <span className="text-gray-300">{connectionStatus}</span>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => setShowAIPanel(!showAIPanel)}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                  showAIPanel 
-                    ? 'bg-green-600 hover:bg-green-700 text-white' 
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${showAIPanel
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
                     : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                }`}
+                  }`}
               >
                 <Brain className="h-4 w-4" />
                 <span className="hidden sm:inline">AI Coach</span>
               </button>
+              {gameData.status === 'waiting' && playerColor === 'spectator' && !gameData.blackPlayerId && (
+                <button
+                  onClick={joinAsSecondPlayer}
+                  className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  <Users className="h-4 w-4" />
+                  <span className="hidden sm:inline">Join Game</span>
+                </button>
+              )}
               <button
                 onClick={copyRoomLink}
                 className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
@@ -236,7 +298,7 @@ export default function GamePage() {
             {/* Players */}
             <div className="bg-black/30 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
               <h3 className="text-lg font-semibold text-white mb-4">Players</h3>
-              
+
               {/* Black Player (Top) */}
               <div className="mb-6">
                 <div className="flex items-center space-x-3 mb-2">
@@ -332,7 +394,7 @@ export default function GamePage() {
                       Your Turn
                     </div>
                   )}
-                  
+
                   <ChessBoard
                     gameId={gameData.id}
                     playerColor={playerColor}
@@ -343,7 +405,7 @@ export default function GamePage() {
                       moves: gameData.moves,
                     }}
                   />
-                  
+
                   {/* Player Color Indicator */}
                   <div className="mt-4 text-center">
                     <span className="text-gray-300 text-sm">
@@ -399,7 +461,7 @@ export default function GamePage() {
                       return (
                         <div key={index} className="flex items-center space-x-2 text-sm">
                           <span className="text-gray-400 w-6">{Math.floor(index / 2) + 1}.</span>
-                          
+
                           {player && (
                             <img
                               src={getPlayerAvatar(player.name, move.player, 16)}
@@ -407,7 +469,7 @@ export default function GamePage() {
                               className="w-4 h-4 rounded-full"
                             />
                           )}
-                          
+
                           <span className="font-mono text-white bg-gray-800/50 px-2 py-1 rounded flex-1 text-center">
                             {move.san}
                           </span>
@@ -429,7 +491,7 @@ export default function GamePage() {
           {showAIPanel && (
             <div className="fixed top-20 right-6 w-96 h-[calc(100vh-8rem)] z-40 space-y-4 animate-in slide-in-from-right-4 duration-300">
               <div className="h-1/2">
-                <AIAnalysis 
+                <AIAnalysis
                   gameState={{
                     fen: gameData.boardState,
                     currentTurn: gameData.currentTurn,
@@ -438,7 +500,7 @@ export default function GamePage() {
                   playerColor={playerColor}
                 />
               </div>
-              
+
               <div className="h-1/2">
                 <AIChat
                   gameState={{
@@ -460,6 +522,16 @@ export default function GamePage() {
           moveNumber={gameData.moves.length}
         />
       </main>
+
+      {/* Toast Notification */}
+      {showToast && (
+        <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-right-4 duration-300">
+          <div className="bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+            <div className="w-2 h-2 bg-green-300 rounded-full animate-pulse"></div>
+            <span className="font-medium">{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
