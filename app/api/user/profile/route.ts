@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { verifyToken } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
+    // Import prisma dynamically to avoid build-time issues
+    const { prisma } = await import('@/lib/db')
+    
     const token = request.cookies.get('auth-token')?.value
     
     if (!token) {

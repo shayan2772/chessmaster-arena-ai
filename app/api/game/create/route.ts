@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { verifyToken } from '@/lib/auth'
 import { getFreeGamesLimit } from '@/lib/config'
 import { v4 as uuidv4 } from 'uuid'
 
 export async function POST(request: NextRequest) {
   try {
+    // Import prisma dynamically to avoid build-time issues
+    const { prisma } = await import('@/lib/db')
+    
     const token = request.cookies.get('auth-token')?.value
     
     if (!token) {
