@@ -6,14 +6,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const roomId = searchParams.get('roomId')
     const userId = searchParams.get('userId')
-    const lastPoll = searchParams.get('lastPoll') || new Date(Date.now() - 5000).toISOString()
+    const lastPoll = searchParams.get('lastPoll') || new Date(Date.now() - 10000).toISOString()
+
+    console.log('📥 Poll API called:', { roomId, userId, lastPoll })
 
     if (!roomId || !userId) {
       return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
     }
 
     // Get events since last poll
-    const { data: events } = await supabaseAdmin
+    const { data: events, error: eventsError } = await supabaseAdmin
       .from('realtime_events')
       .select('*')
       .eq('room_id', roomId)
@@ -21,10 +23,17 @@ export async function GET(request: NextRequest) {
       .gt('created_at', lastPoll)
       .order('created_at', { ascending: true })
 
+    if (eventsError) {
+      console.error('📥 Events fetch error:', eventsError)
+      return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 })
+    }
+
     const formattedEvents = (events || []).map(event => ({
       event: event.event_type,
       data: JSON.parse(event.event_data)
     }))
+
+    console.log('📥 Returning events:', formattedEvents.length)
 
     // Clean up old events (older than 1 hour)
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()

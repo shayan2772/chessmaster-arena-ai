@@ -89,6 +89,14 @@ export default function GamePage() {
       if (response.ok) {
         const data = await response.json()
         console.log('🎯 Game data received:', data)
+        console.log('🎯 Game players:', {
+          whitePlayerId: data.game.whitePlayerId,
+          blackPlayerId: data.game.blackPlayerId,
+          whitePlayer: data.game.whitePlayer,
+          blackPlayer: data.game.blackPlayer,
+          status: data.game.status,
+          currentTurn: data.game.currentTurn
+        })
         setGameData(data.game)
         setPlayerColor(data.playerColor)
         setCurrentUserId(data.userId)

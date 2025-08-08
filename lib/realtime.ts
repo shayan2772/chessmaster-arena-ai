@@ -20,6 +20,7 @@ export class RealtimeClient {
   }
 
   emit(event: string, data: any) {
+    console.log('📤 Emitting event:', event, 'Data:', data)
     // Send event to server via API
     fetch('/api/realtime/emit', {
       method: 'POST',
@@ -30,7 +31,17 @@ export class RealtimeClient {
         event,
         data
       })
-    }).catch(console.error)
+    })
+    .then(response => {
+      console.log('📤 Emit response:', response.status)
+      return response.json()
+    })
+    .then(result => {
+      console.log('📤 Emit result:', result)
+    })
+    .catch(error => {
+      console.error('📤 Emit error:', error)
+    })
   }
 
   private trigger(event: string, data: any) {
@@ -49,14 +60,20 @@ export class RealtimeClient {
         const response = await fetch(`/api/realtime/poll?roomId=${this.roomId}&userId=${this.userId}`)
         if (response.ok) {
           const events = await response.json()
+          if (events.length > 0) {
+            console.log('📥 Received events:', events)
+          }
           events.forEach((eventData: any) => {
+            console.log('📥 Triggering event:', eventData.event, 'Data:', eventData.data)
             this.trigger(eventData.event, eventData.data)
           })
+        } else {
+          console.error('📥 Poll failed:', response.status)
         }
       } catch (error) {
-        console.error('Polling error:', error)
+        console.error('📥 Polling error:', error)
       }
-    }, 1000) // Poll every second
+    }, 2000) // Poll every 2 seconds
   }
 
   disconnect() {
